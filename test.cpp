@@ -9,7 +9,7 @@ int main() {
     std::vector<std::string> inputs;
 
     // -------------------- VALID INPUTS START HERE --------------------------
-    inputs.emplace_back("1+2");                                  //  1
+    inputs.emplace_back("1+2"); // = 3                           //  1
     inputs.emplace_back("4*21/(8+3) - (7)*450");                 //  2
     inputs.emplace_back("((15))");                               //  3
     inputs.emplace_back("3*-5");                                 //  4
@@ -37,27 +37,29 @@ int main() {
     inputs.emplace_back("8*-+-2");                               // 26
     inputs.emplace_back("((((((((((5))))))))))");                // 27
     inputs.emplace_back("((((3*2)+1)/(9-(3+(2-(1))))) - 4)");    // 28
+    inputs.emplace_back("00000000000000000000000000+1");         // 29
+    inputs.emplace_back("100/(25/-5)");                          // 30
     // ---------- VALID INPUTS END HERE / INVALID INPUTS START HERE ----------
-    inputs.emplace_back("100/(25/-5)");                          // 29
-    inputs.emplace_back("");                                     // 30
-    inputs.emplace_back("()");                                   // 31
-    inputs.emplace_back("( )");                                  // 32
-    inputs.emplace_back("(");                                    // 33
-    inputs.emplace_back(")");                                    // 34
-    inputs.emplace_back("5++*3");                                // 35
-    inputs.emplace_back("*3+5");                                 // 36
-    inputs.emplace_back("((1+(2+(3+(4+(5+(6+(7))))))))))");      // 37
-    inputs.emplace_back("3+5-");                                 // 38
-    inputs.emplace_back("10/**2");                               // 39
-    inputs.emplace_back("8+/-2");                                // 40
-    inputs.emplace_back("7+()");                                 // 41
-    inputs.emplace_back("4+5)");                                 // 42
-    inputs.emplace_back("(4+5");                                 // 43
-    inputs.emplace_back("5 / 0");                                // 44
-    inputs.emplace_back("20/(10-10)");                           // 45
-    inputs.emplace_back("3 + * 4");                              // 46
-    inputs.emplace_back("5 + - * 7");                            // 47
-    inputs.emplace_back("100000000000000000000000000000000000"); // 48
+    inputs.emplace_back("000000000473160001716161285317+1");     // 31
+    inputs.emplace_back("");                                     // 32
+    inputs.emplace_back("()");                                   // 33
+    inputs.emplace_back("( )");                                  // 34
+    inputs.emplace_back("(");                                    // 35
+    inputs.emplace_back(")");                                    // 36
+    inputs.emplace_back("5++*3");                                // 37
+    inputs.emplace_back("*3+5");                                 // 38
+    inputs.emplace_back("((1+(2+(3+(4+(5+(6+(7))))))))))");      // 39
+    inputs.emplace_back("3+5-");                                 // 40
+    inputs.emplace_back("10/**2");                               // 41
+    inputs.emplace_back("8+/-2");                                // 42
+    inputs.emplace_back("7+()");                                 // 43
+    inputs.emplace_back("4+5)");                                 // 44
+    inputs.emplace_back("(4+5");                                 // 45
+    inputs.emplace_back("5 / 0");                                // 46
+    inputs.emplace_back("20/(10-10)");                           // 47
+    inputs.emplace_back("3 + * 4");                              // 48
+    inputs.emplace_back("5 + - * 7");                            // 49
+    inputs.emplace_back("100000000000000000000000000000000000"); // 50
 
     Calculator calc;
     std::cout << std::setprecision(15);

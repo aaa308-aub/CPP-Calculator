@@ -35,6 +35,10 @@ private:
         return "Max number of digits (currently set to " + std::to_string(MAX_DIGITS) +") exceeded";
     }
 
+    static bool isBounded(const ull_t& a) {
+        return std::floor( std::log10(a) ) + 1 <= MAX_DIGITS;
+    }
+
     static bool isProductBounded(const ull_t& a, const ull_t& b) {
         return std::floor( std::log10(a) + std::log10(b) ) + 1 <= MAX_DIGITS;
     }
@@ -132,9 +136,8 @@ private:
             delete node_left; node_left = nullptr;
             delete node_right; node_right = nullptr;
 
-            if ( std::floor( std::log10(numerator) + 1 ) > MAX_DIGITS ) {
+            if (!isBounded(numerator))
                 throw std::overflow_error(overflowErrorMessage());
-            }
 
 
             return new Fraction(numerator, denominator, isNegative);
@@ -195,7 +198,7 @@ private:
                 numerator = new_num_right - new_num_left;
                 isNegative = !isNegative;
             }
-            // Subtraction here will always lead to <= MAX_DIGITS
+            // Subtraction here will always be bounded by MAX_DIGITS
 
             return new Fraction(numerator, denominator, isNegative);
         }
@@ -435,20 +438,37 @@ private:
         return parseExpression(lex);
     };
 
+    static void operateOnLeft(ASTNode*& left, Lexer& lex) {
+        switch (*lex) {
+            case '+':
+                ++lex;
+                left = new Addition(left, parseTerm(lex));
+                break;
+
+            case '-':
+                ++lex;
+                left = new Subtraction(left, parseTerm(lex));
+                break;
+
+            case '*':
+                ++lex;
+                left = new Product(left, parseTerm(lex));
+                break;
+
+            case '/':
+                ++lex;
+                left = new Quotient(left, parseTerm(lex));
+                break;
+
+            default: break;
+        }
+    }
+
     [[nodiscard]] static ASTNode* parseExpression(Lexer& lex) {
         auto left = parseTerm(lex);
 
-        while (true) {
-            if (*lex == '+') {
-                ++lex;
-                left = new Addition(left, parseTerm(lex));
-            }
-            else if (*lex == '-') {
-                ++lex;
-                left = new Subtraction(left, parseTerm(lex));
-            }
-            else break;
-        }
+        while (*lex == '+' || *lex == '-') // slight redundancy here, but this is otherwise the best way to do it
+                operateOnLeft(left, lex);
 
         return left;
     }
@@ -456,17 +476,8 @@ private:
     [[nodiscard]] static ASTNode* parseTerm(Lexer& lex) {
         auto left = parseOperand(lex);
 
-        while (true) {
-            if (*lex == '*') {
-                ++lex;
-                left = new Product(left, parseOperand(lex));
-            }
-            else if (*lex == '/') {
-                ++lex;
-                left = new Quotient(left, parseOperand(lex));
-            }
-            else break;
-        }
+        while (*lex == '*' || *lex == '/')
+            operateOnLeft(left, lex);
 
         return left;
     };
@@ -488,15 +499,17 @@ private:
             return node;
         }
 
-        std::string intString{ *lex };
-        ++lex;
+        ull_t operand = 0;
         while ( isDigit(*lex) ) {
-            intString += *lex;
+            operand *= 10;
+            operand += static_cast<ull_t>(*lex) - static_cast<ull_t>('0');
+            if (!isBounded(operand))
+                throw std::overflow_error(overflowErrorMessage());
             ++lex;
         }
 
 
-        return new Fraction(std::stoull(intString), 1, isNegative);
+        return new Fraction(operand, 1, isNegative);
     };
 
 };
