@@ -15,7 +15,7 @@ void displayFeatures() {
     std::cout << "      \"-8*+--4\" : evaluates to -8*4" << "\n";
     std::cout << "      \"+++9/+(--7)\" : evaluates to 9/7" << "\n";
     std::cout << "      \"4*/6\" : invalid because / as a leading operator is not allowed" << "\n";
-    std::cout << "* No leading operators allowed such as in \"7+\" or \"(7+)6\" or \"4/4*4*\"" << "\n";
+    std::cout << "* No trailing operators with no operands allowed, such as in \"7+\" or \"(7+)6\" or \"4/4*4*\"" << "\n";
     std::cout << "* Parentheses adjacent to numbers or other parentheses are padded by * . Example:" << "\n";
     std::cout << "      \"2(1/2)4(5-7)(0+1)\" is evaluated as \"2*(1/2)*4*(5-7)*(0+1)\"" << "\n";
     std::cout << "---------------------------------------------------------------------------------------------------------" << "\n";
@@ -39,7 +39,7 @@ int main() {
 
         try {
             calc.calculate(input);
-            std::cout << "Answer: " << calc.getAnswer() << "\n\n";
+            std::cout << "Answer: " << calc.getLastAnswer() << "\n\n";
         } catch (const std::exception& e) {
             std::cout << "ERROR / INVALID INPUT : " << e.what() << "\n\n";
         }
