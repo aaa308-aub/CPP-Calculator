@@ -12,19 +12,19 @@ class Calculator {
 public:
 
     double calculate(const std::string& exp) {
-        auto tokens = lex(exp);
-        auto ASTree = parse(tokens);
+        ASTNode* ASTree = parse(exp);
         auto totalFraction = ASTree->evaluate();
-        answer = totalFraction->calculate();
-        expression = exp;
+        auto tryAnswer = totalFraction->calculate();
+        lastExpression = exp;
+        lastAnswer = tryAnswer;
         delete ASTree;
         delete totalFraction;
-        return answer;
+        return tryAnswer;
     }
 
-    [[nodiscard]] auto getMaxDigits() { return MAX_DIGITS; }
-    [[nodiscard]] auto getAnswer() const { return answer; }
-    [[nodiscard]] auto getExpression() const { return expression; }
+    [[nodiscard]] auto getMaxDigits() const { return MAX_DIGITS; }
+    [[nodiscard]] auto getLastExpression() const { return lastExpression; }
+    [[nodiscard]] auto getLastAnswer() const { return lastAnswer; }
 
 private:
 
@@ -274,8 +274,8 @@ private:
     };
 
 
-    std::string expression = "0";
-    double answer = 0;
+    std::string lastExpression = "0";
+    double lastAnswer = 0;
 
 
     static bool isDigit(const char& c) {
@@ -288,16 +288,86 @@ private:
         return OPS.find(c) != std::string::npos;
     }
 
-    [[nodiscard]] static std::string lex(const std::string& exp) {
-        std::string tokens;
-        int numOpenPars = 0;
-        int currentDigits = 1;
+    class Lexer {
+    private:
 
-        for (const char& c : exp) {
-            char last = tokens.empty() ? ' ' : tokens.back();
+        char SENTINEL_CHAR = ' '; // unused sentinel value to silence warnings about uninitialized members
+        const std::string& expression;
+        unsigned int idx;
+        unsigned int numOpenPars;
+        bool isDelayed; // purpose is to return '*' in expressions like "...+4)7-..." before returning '7' here for example
+        char current;
+        char last;
+        char delayed;
 
-            switch (c) {
-                case '0': // division by 0 cannot be detected by lexer. Consider inputs "1/+-007" or "3/(5-5)"
+    public:
+
+        explicit Lexer(const std::string& e)
+            : expression(e)
+            , numOpenPars(0)
+            , isDelayed(false)
+            , current(SENTINEL_CHAR)
+            , last(SENTINEL_CHAR)
+            , delayed(SENTINEL_CHAR)
+            {
+            for (idx = 0; idx < expression.length(); ++idx) { // point Lexer to first valid token
+                switch (expression[idx]) {
+                    case ' ': continue;
+
+                    case '*':
+                    case '/':
+                        throw std::invalid_argument("Invalid unary * or / found");
+
+                    case ')':
+                        throw std::invalid_argument("Closed parenthesis with no open match found");
+
+                    case '(':
+                        ++numOpenPars;
+                        [[fallthrough]];
+                    case '0':
+                    case '1':
+                    case '2':
+                    case '3':
+                    case '4':
+                    case '5':
+                    case '6':
+                    case '7':
+                    case '8':
+                    case '9':
+                    case '+':
+                    case '-':
+                        current = expression[idx];
+                        return;
+
+                    default: throw std::invalid_argument("Invalid character found");
+                }
+            }
+
+            throw std::invalid_argument("Expression is empty");
+        }
+
+        [[nodiscard]] char operator*() const { return current; }
+
+        void operator++() {
+            if (isDelayed) {
+                isDelayed = false;
+                current = delayed;
+            }
+
+            do ++idx; while (idx < expression.length() && expression[idx] == ' ');
+
+            last = current;
+            if (idx >= expression.length()) {
+                if (numOpenPars != 0) throw std::invalid_argument("Unmatched open parenthesis found");
+                if (isOperator(last)) throw std::invalid_argument("Leading operator found");
+
+                current = ')'; // for first iteration of parseExpression() to stop at ')'
+                return;
+            }
+
+            current = expression[idx];
+            switch (current) {
+                case '0':
                 case '1':
                 case '2':
                 case '3':
@@ -307,33 +377,32 @@ private:
                 case '7':
                 case '8':
                 case '9':
-                    if (isDigit(last)) {
-                        if (++currentDigits > MAX_DIGITS)
-                            throw std::overflow_error(overflowErrorMessage());
-                        tokens += c;
-                        break;
+                    if (last == ')') {
+                        isDelayed = true;
+                        delayed = current;
+                        current = '*';
                     }
-                    currentDigits = 1;
-                    if (last == ')') tokens += '*';
-                    tokens += c;
                     break;
 
                 case '+':
                 case '-':
-                    tokens += c;
                     break;
 
                 case '*':
                 case '/':
-                    if (tokens.empty() || last == '(') throw std::invalid_argument("Invalid unary * or / found");
-                    if (isOperator(last)) throw std::invalid_argument("Invalid adjacent operators found");
-                    tokens += c;
+                    if (last == '(')
+                        throw std::invalid_argument("Invalid unary * or / found");
+                    if (isOperator(last))
+                        throw std::invalid_argument("Invalid adjacent operators found");
                     break;
 
                 case '(':
-                    if (last == ')' || isDigit(last)) tokens += '*';
+                    if (last == ')' || isDigit(last)) {
+                        isDelayed = true;
+                        delayed = current;
+                        current = '*';
+                    }
                     ++numOpenPars;
-                    tokens += c;
                     break;
 
                 case ')':
@@ -342,21 +411,12 @@ private:
                     if (isOperator(last)) throw std::invalid_argument("Leading operator found");
                     if (last == '(') throw std::invalid_argument("Empty parentheses found");
                     --numOpenPars;
-                    tokens += c;
                     break;
 
-                case ' ': break;
                 default: throw std::invalid_argument("Invalid character found");
             }
         }
-
-        if (tokens.empty()) throw std::invalid_argument("Expression is empty");
-        if (numOpenPars != 0) throw std::invalid_argument("Unmatched open parenthesis found");
-        if (isOperator(tokens.back())) throw std::invalid_argument("Leading operator found");
-
-        tokens += ')'; // for first iteration of parseExpression() to stop at ')'
-        return tokens;
-    }
+    };
 
 
     /* Parser Language:
@@ -370,17 +430,22 @@ private:
      * E := T { (+ || -) T }
      */
 
-    [[nodiscard]] static ASTNode* parseExpression(const std::string& tokens, unsigned int& idx) {
-        auto left = parseTerm(tokens, idx);
+    [[nodiscard]] static ASTNode* parse(const std::string& expression) {
+        Lexer lex(expression);
+        return parseExpression(lex);
+    };
+
+    [[nodiscard]] static ASTNode* parseExpression(Lexer& lex) {
+        auto left = parseTerm(lex);
 
         while (true) {
-            if (tokens[idx] == '+') {
-                ++idx;
-                left = new Addition(left, parseTerm(tokens, idx));
+            if (*lex == '+') {
+                ++lex;
+                left = new Addition(left, parseTerm(lex));
             }
-            else if (tokens[idx] == '-') {
-                ++idx;
-                left = new Subtraction(left, parseTerm(tokens, idx));
+            else if (*lex == '-') {
+                ++lex;
+                left = new Subtraction(left, parseTerm(lex));
             }
             else break;
         }
@@ -388,17 +453,17 @@ private:
         return left;
     }
 
-    [[nodiscard]] static ASTNode* parseTerm(const std::string& tokens, unsigned int& idx) {
-        auto left = parseOperand(tokens, idx);
+    [[nodiscard]] static ASTNode* parseTerm(Lexer& lex) {
+        auto left = parseOperand(lex);
 
         while (true) {
-            if (tokens[idx] == '*') {
-                ++idx;
-                left = new Product(left, parseOperand(tokens, idx));
+            if (*lex == '*') {
+                ++lex;
+                left = new Product(left, parseOperand(lex));
             }
-            else if (tokens[idx] == '/') {
-                ++idx;
-                left = new Quotient(left, parseOperand(tokens, idx));
+            else if (*lex == '/') {
+                ++lex;
+                left = new Quotient(left, parseOperand(lex));
             }
             else break;
         }
@@ -406,36 +471,32 @@ private:
         return left;
     };
 
-    [[nodiscard]] static ASTNode* parseOperand(const std::string& tokens, unsigned int& idx) {
+    [[nodiscard]] static ASTNode* parseOperand(Lexer& lex) {
         bool isNegative = false;
 
         while (true) {
-            if (tokens[idx] == '-') isNegative = !isNegative;
-            else if (tokens[idx] != '+') break;
-            ++idx;
+            if (*lex == '-') isNegative = !isNegative;
+            else if (*lex != '+') break;
+            ++lex;
         }
 
-        if (tokens[idx] == '(') {
-            ++idx;
-            auto node = parseExpression(tokens, idx);
-            ++idx;
+        if (*lex == '(') {
+            ++lex;
+            auto node = parseExpression(lex);
+            ++lex;
             if (isNegative) return new Negation(node);
             return node;
         }
 
-        std::string intString{ tokens[idx] };
-        ++idx;
-        while ( isDigit(tokens[idx]) ) {
-            intString += tokens[idx];
-            ++idx;
+        std::string intString{ *lex };
+        ++lex;
+        while ( isDigit(*lex) ) {
+            intString += *lex;
+            ++lex;
         }
 
-        return new Fraction(std::stoull(intString), 1, isNegative);
-    };
 
-    [[nodiscard]] static ASTNode* parse(const std::string& tokens) {
-        unsigned int idx = 0;
-        return parseExpression(tokens, idx); // tokens already contains an extra ')' for first parseExpression to stop.
+        return new Fraction(std::stoull(intString), 1, isNegative);
     };
 
 };
