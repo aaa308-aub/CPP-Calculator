@@ -3,9 +3,11 @@
 
 #include <cmath>
 #include <memory>
+#include <numeric>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 
 class Calculator {
@@ -27,17 +29,29 @@ private:
 
     using ull_t = unsigned long long int;
     static inline constexpr unsigned short int MAX_DIGITS = 15; // for computing double, needs to be <= 15
+    // decided to compromise for the biggest number with MAX_DIGITS number of digits, since it's faster to compare with
+    static inline constexpr ull_t MAX_NUM = []() constexpr {
+        ull_t num = 0;
+        for (int i = 0; i < MAX_DIGITS; ++i) {
+            num *= 10;
+            num += 9;
+        }
+        return num;
+    }();
 
-    static std::string overflowErrorMessage() {
-        return "Max number of digits (currently set to " + std::to_string(MAX_DIGITS) +") exceeded";
+    static std::string overflowErrorMessage() { // Must adjust if MAX_NUM is changed
+        return "Max number of digits (currently set to " + std::to_string(MAX_DIGITS) + ") exceeded";
     }
 
-    static bool isBounded(const ull_t& a) {
-        return std::floor( std::log10(a) ) + 1 <= MAX_DIGITS;
-    }
+    static bool isBounded(const ull_t& x) { return x <= MAX_NUM; }
 
-    static bool isProductBounded(const ull_t& a, const ull_t& b) {
-        return std::floor( std::log10(a) + std::log10(b) ) + 1 <= MAX_DIGITS;
+    static bool isProductBounded(ull_t copy1, ull_t copy2) {
+        if (copy1 == 0 || copy2 == 0) return true;
+        unsigned int digits1 = 0, digits2 = 0;
+        while (copy1 != 0) { copy1 /= 10; ++digits1; }
+        while (copy2 != 0) { copy2 /= 10; ++digits2; }
+        return digits1 + digits2 <= MAX_DIGITS;
+        // often, digits of product = digits1 + digits2 - 1 , but this is fine for the sake of simplicity.
     }
 
 
@@ -62,12 +76,50 @@ private:
             if (isNegative) result = -result;
             return result;
         }
+
+        void reduce() {
+            if (numerator == 0) {
+                denominator = 1;
+                isNegative = false;
+                return;
+            }
+            ull_t gcd = std::gcd(numerator, denominator); // gcd = greatest common divisor
+            numerator /= gcd;
+            denominator /= gcd;
+        }
+
+        [[nodiscard]] auto findCommons(const Fraction& other) const -> std::tuple<ull_t, ull_t, ull_t> {
+            const ull_t& l_num = this->numerator;
+            const ull_t& l_den = this->denominator;
+            const ull_t& r_num = other.numerator;
+            const ull_t& r_den = other.denominator;
+
+
+            ull_t gcd = std::gcd(l_den, r_den);
+            ull_t k = l_den / gcd;
+            if ( !isProductBounded(k, r_den) )
+                throw std::overflow_error(overflowErrorMessage());
+
+
+            ull_t lcm = k * r_den; // lcm = least common multiple
+            if ( !isProductBounded(l_num, lcm/l_den) )
+                throw std::overflow_error(overflowErrorMessage());
+
+            if ( !isProductBounded(r_num, lcm/r_den) )
+                throw std::overflow_error(overflowErrorMessage());
+
+
+            ull_t l_num_scaled = l_num * lcm / l_den;
+            ull_t r_num_scaled = r_num * lcm / r_den;
+
+            return {lcm, l_num_scaled, r_num_scaled};
+        }
     };
 
     struct Negation : public ASTNode {
         std::unique_ptr<ASTNode> operand;
 
-        explicit Negation(std::unique_ptr<ASTNode>& o): operand(std::move(o)) {}
+        explicit Negation(std::unique_ptr<ASTNode>&& o): operand(std::move(o)) {}
 
         Fraction evaluate() override {
             Fraction node = operand->evaluate();
@@ -88,7 +140,6 @@ private:
         Fraction evaluate() override {
             auto node_left = std::make_unique<Fraction>(left->evaluate());
             auto node_right = std::make_unique<Fraction>(right->evaluate());
-            bool isNegative = false;
 
 
             if (!node_left->isNegative && node_right->isNegative) {
@@ -101,26 +152,20 @@ private:
                 return Subtraction(std::move(node_right), std::move(node_left)).evaluate();
             }
 
-            if (node_left->isNegative && node_right->isNegative)
-                isNegative = true;
+            bool isNegative = node_left->isNegative && node_right->isNegative ? true : false ;
 
 
-            if (!isProductBounded(node_left->denominator, node_right->denominator)
-                || !isProductBounded(node_left->numerator, node_right->denominator)
-                || !isProductBounded(node_left->denominator, node_right->numerator)
-                )
+            auto commons = node_left->findCommons(*node_right);
+            auto& [lcm, l_num_scaled, r_num_scaled] = commons;
+            auto numerator = l_num_scaled + r_num_scaled;
+            // safe if MAX_DIGITS is few digits away from ull_t. Then we just check if numerator is bounded
+
+
+            Fraction result(numerator, lcm, isNegative);
+            result.reduce();
+            if (!isBounded(result.numerator))
                 throw std::overflow_error(overflowErrorMessage());
-
-            auto numerator = node_left->numerator * node_right->denominator;
-            numerator += node_left->denominator * node_right->numerator;
-            // Sum is at most MAX_DIGITS + 1 and MAX_DIGITS is far away from ull_t's max, so it is safe to compute and compare
-            auto denominator = node_left->denominator * node_right->denominator;
-
-            if (!isBounded(numerator))
-                throw std::overflow_error(overflowErrorMessage());
-
-
-            return Fraction(numerator, denominator, isNegative);
+            return result;
         }
 
         ~Addition() override = default;
@@ -136,7 +181,6 @@ private:
         Fraction evaluate() override {
             auto node_left = std::make_unique<Fraction>(left->evaluate());
             auto node_right = std::make_unique<Fraction>(right->evaluate());
-            bool isNegative = false;
 
 
             if (node_left->isNegative && !node_right->isNegative) {
@@ -149,31 +193,24 @@ private:
                 return Addition(std::move(node_left), std::move(node_right)).evaluate();
             }
 
-            if (node_left->isNegative && node_right->isNegative)
-                isNegative = true;
+            bool isNegative = node_left->isNegative && node_right->isNegative ? true : false ;
 
 
-            if (!isProductBounded(node_left->denominator, node_right->denominator)
-                || !isProductBounded(node_left->numerator, node_right->denominator)
-                || !isProductBounded(node_left->denominator, node_right->numerator)
-                )
-                throw std::overflow_error(overflowErrorMessage());
-
-            auto new_num_left = node_left->numerator * node_right->denominator;
-            auto new_num_right = node_left->denominator * node_right->numerator;
-            auto denominator = node_left->denominator * node_right->denominator;
+            auto commons = node_left->findCommons(*node_right);
+            auto& [lcm, l_num_scaled, r_num_scaled] = commons;
 
             ull_t numerator;
-            if (new_num_right <= new_num_left) {
-                numerator = new_num_left - new_num_right;
-            }
-            else {
-                numerator = new_num_right - new_num_left;
+            if (l_num_scaled < r_num_scaled) {
+                numerator = r_num_scaled - l_num_scaled;
                 isNegative = !isNegative;
             }
+            else numerator = l_num_scaled - r_num_scaled;
             // Subtraction here will always be bounded by MAX_DIGITS
 
-            return Fraction(numerator, denominator, isNegative);
+
+            Fraction result(numerator, lcm, isNegative);
+            result.reduce();
+            return result;
         }
 
         ~Subtraction() override = default;
@@ -189,19 +226,24 @@ private:
         Fraction evaluate() override {
             auto node_left = std::make_unique<Fraction>(left->evaluate());
             auto node_right = std::make_unique<Fraction>(right->evaluate());
-            bool isNegative = false;
+            bool isNegative = node_left->isNegative ^ node_right->isNegative ? true : false ;
 
+
+            auto gcd1 = std::gcd(node_left->numerator, node_right->denominator);
+            auto gcd2 = std::gcd(node_left->denominator, node_right->numerator);
+
+            node_left->numerator /= gcd1;
+            node_left->denominator /= gcd2;
+            node_right->numerator /= gcd2;
+            node_right->denominator /= gcd1;
 
             if (!isProductBounded(node_left->numerator, node_right->numerator)
                 || !isProductBounded(node_left->denominator, node_right->denominator))
                 throw std::overflow_error(overflowErrorMessage());
 
-            if (node_left->isNegative ^ /*XOR*/ node_right->isNegative)
-                isNegative = true;
-
-
             ull_t numerator = node_left->numerator * node_right->numerator;
-            ull_t denominator = node_right->denominator * node_left->denominator;
+            ull_t denominator = node_left->denominator * node_right->denominator;
+
 
             return Fraction(numerator, denominator, isNegative);
         }
@@ -450,7 +492,7 @@ private:
             ++lex;
             auto node = parseExpression(lex);
             ++lex;
-            if (isNegative) return std::make_unique<Negation>(node);
+            if (isNegative) return std::make_unique<Negation>(std::move(node));
             return node;
         }
 

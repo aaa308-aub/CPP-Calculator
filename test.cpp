@@ -37,7 +37,7 @@ int main() {
     inputs.emplace_back("8*-+-2");                               // 26
     inputs.emplace_back("((((((((((5))))))))))");                // 27
     inputs.emplace_back("((((3*2)+1)/(9-(3+(2-(1))))) - 4)");    // 28
-    inputs.emplace_back("00000000000000000000000000+1");         // 29
+    inputs.emplace_back("00000000000000000000000320+1");         // 29
     inputs.emplace_back("100/(25/-5)");                          // 30
     // ---------- VALID INPUTS END HERE / INVALID INPUTS START HERE ----------
     inputs.emplace_back("000000000473160001716161285317+1");     // 31
