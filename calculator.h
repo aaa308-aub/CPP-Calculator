@@ -1,25 +1,22 @@
 #ifndef CALCULATOR_H
 #define CALCULATOR_H
 
-#include <algorithm>
 #include <cmath>
-#include <numeric>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 
 class Calculator {
 public:
 
-    double calculate(const std::string& exp) {
-        ASTNode* ASTree = parse(exp);
-        auto totalFraction = ASTree->evaluate();
-        auto tryAnswer = totalFraction->calculate();
-        lastExpression = exp;
-        lastAnswer = tryAnswer;
-        delete ASTree;
-        delete totalFraction;
-        return tryAnswer;
+    double calculate(const std::string& expression) {
+        auto ASTree = parse(expression);
+        Fraction totalFraction = ASTree->evaluate();
+        lastAnswer = totalFraction.calculate();
+        lastExpression = expression;
+        return lastAnswer;
     }
 
     [[nodiscard]] auto getMaxDigits() const { return MAX_DIGITS; }
@@ -46,7 +43,7 @@ private:
 
     struct Fraction;
     struct ASTNode {
-        virtual Fraction* evaluate() = 0;
+        virtual Fraction evaluate() = 0;
         virtual ~ASTNode() = default;
     };
 
@@ -58,61 +55,50 @@ private:
         explicit Fraction(const ull_t& n, const ull_t& d, const bool& neg = false):
             numerator(n), denominator(d), isNegative(neg) {}
 
-        Fraction(const Fraction& other) {
-            this->numerator = other.numerator;
-            this->denominator = other.denominator;
-            this->isNegative = other.isNegative;
-        }
-
-        Fraction* evaluate() override { return new Fraction(*this); }
-        // must copy in order to mimic logic of other operators' .evaluate() method
+        Fraction evaluate() override { return *this; }
 
         [[nodiscard]] double calculate() const {
             double result = static_cast<double>(numerator) / static_cast<double>(denominator);
             if (isNegative) result = -result;
             return result;
         }
-
-        ~Fraction() override = default;
     };
 
     struct Negation : public ASTNode {
-        ASTNode* operand;
+        std::unique_ptr<ASTNode> operand;
 
-        explicit Negation(ASTNode* o): operand(o) {}
+        explicit Negation(std::unique_ptr<ASTNode>& o): operand(std::move(o)) {}
 
-        Fraction* evaluate() override {
-            Fraction* node = operand->evaluate();
-            delete operand; operand = nullptr;
-            node->isNegative = !node->isNegative;
+        Fraction evaluate() override {
+            Fraction node = operand->evaluate();
+            node.isNegative = !node.isNegative;
             return node;
         }
 
-        ~Negation() override { delete operand; };
+        ~Negation() override = default;
     };
 
     struct Addition : public ASTNode {
-        ASTNode* left;
-        ASTNode* right;
+        std::unique_ptr<ASTNode> left;
+        std::unique_ptr<ASTNode> right;
 
-        explicit Addition(ASTNode* l, ASTNode* r): left(l), right(r) {}
+        explicit Addition(std::unique_ptr<ASTNode>&& l, std::unique_ptr<ASTNode>&& r)
+            : left(std::move(l)), right(std::move(r)) {}
 
-        Fraction* evaluate() override {
-            Fraction* node_left = left->evaluate();
-            Fraction* node_right = right->evaluate();
-            delete left; left = nullptr;
-            delete right; right = nullptr;
+        Fraction evaluate() override {
+            auto node_left = std::make_unique<Fraction>(left->evaluate());
+            auto node_right = std::make_unique<Fraction>(right->evaluate());
             bool isNegative = false;
 
 
             if (!node_left->isNegative && node_right->isNegative) {
                 node_right->isNegative = false;
-                return Subtraction(node_left, node_right).evaluate();
+                return Subtraction(std::move(node_left), std::move(node_right)).evaluate();
             }
 
             if (node_left->isNegative && !node_right->isNegative) {
                 node_left->isNegative = false;
-                return Subtraction(node_right, node_left).evaluate();
+                return Subtraction(std::move(node_right), std::move(node_left)).evaluate();
             }
 
             if (node_left->isNegative && node_right->isNegative)
@@ -122,52 +108,45 @@ private:
             if (!isProductBounded(node_left->denominator, node_right->denominator)
                 || !isProductBounded(node_left->numerator, node_right->denominator)
                 || !isProductBounded(node_left->denominator, node_right->numerator)
-                ) {
-                delete node_left; node_left = nullptr;
-                delete node_right; node_right = nullptr;
+                )
                 throw std::overflow_error(overflowErrorMessage());
-            }
 
             auto numerator = node_left->numerator * node_right->denominator;
             numerator += node_left->denominator * node_right->numerator;
             // Sum is at most MAX_DIGITS + 1 and MAX_DIGITS is far away from ull_t's max, so it is safe to compute and compare
             auto denominator = node_left->denominator * node_right->denominator;
 
-            delete node_left; node_left = nullptr;
-            delete node_right; node_right = nullptr;
-
             if (!isBounded(numerator))
                 throw std::overflow_error(overflowErrorMessage());
 
 
-            return new Fraction(numerator, denominator, isNegative);
+            return Fraction(numerator, denominator, isNegative);
         }
 
-        ~Addition() override { delete left; delete right; }
+        ~Addition() override = default;
     };
 
     struct Subtraction : public ASTNode {
-        ASTNode* left;
-        ASTNode* right;
+        std::unique_ptr<ASTNode> left;
+        std::unique_ptr<ASTNode> right;
 
-        explicit Subtraction(ASTNode* l, ASTNode* r): left(l), right(r) {}
+        explicit Subtraction(std::unique_ptr<ASTNode>&& l, std::unique_ptr<ASTNode>&& r)
+            : left(std::move(l)), right(std::move(r)) {}
 
-        Fraction* evaluate() override {
-            Fraction* node_left = left->evaluate();
-            Fraction* node_right = right->evaluate();
-            delete left; left = nullptr;
-            delete right; right = nullptr;
+        Fraction evaluate() override {
+            auto node_left = std::make_unique<Fraction>(left->evaluate());
+            auto node_right = std::make_unique<Fraction>(right->evaluate());
             bool isNegative = false;
 
 
             if (node_left->isNegative && !node_right->isNegative) {
                 node_right->isNegative = true;
-                return Addition(node_left, node_right).evaluate();
+                return Addition(std::move(node_left), std::move(node_right)).evaluate();
             }
 
             if (!node_left->isNegative && node_right->isNegative) {
                 node_right->isNegative = false;
-                return Addition(node_left, node_right).evaluate();
+                return Addition(std::move(node_left), std::move(node_right)).evaluate();
             }
 
             if (node_left->isNegative && node_right->isNegative)
@@ -177,18 +156,12 @@ private:
             if (!isProductBounded(node_left->denominator, node_right->denominator)
                 || !isProductBounded(node_left->numerator, node_right->denominator)
                 || !isProductBounded(node_left->denominator, node_right->numerator)
-                ) {
-                delete node_left; node_left = nullptr;
-                delete node_right; node_right = nullptr;
+                )
                 throw std::overflow_error(overflowErrorMessage());
-                }
 
             auto new_num_left = node_left->numerator * node_right->denominator;
             auto new_num_right = node_left->denominator * node_right->numerator;
             auto denominator = node_left->denominator * node_right->denominator;
-
-            delete node_left; node_left = nullptr;
-            delete node_right; node_right = nullptr;
 
             ull_t numerator;
             if (new_num_right <= new_num_left) {
@@ -200,32 +173,28 @@ private:
             }
             // Subtraction here will always be bounded by MAX_DIGITS
 
-            return new Fraction(numerator, denominator, isNegative);
+            return Fraction(numerator, denominator, isNegative);
         }
 
-        ~Subtraction() override { delete left; delete right; }
+        ~Subtraction() override = default;
     };
 
     struct Product : public ASTNode {
-        ASTNode* left;
-        ASTNode* right;
+        std::unique_ptr<ASTNode> left;
+        std::unique_ptr<ASTNode> right;
 
-        explicit Product(ASTNode* l, ASTNode* r): left(l), right(r) {}
+        explicit Product(std::unique_ptr<ASTNode>&& l, std::unique_ptr<ASTNode>&& r)
+            : left(std::move(l)), right(std::move(r)) {}
 
-        Fraction* evaluate() override {
-            Fraction* node_left = left->evaluate();
-            Fraction* node_right = right->evaluate();
-            delete left; left = nullptr;
-            delete right; right = nullptr;
+        Fraction evaluate() override {
+            auto node_left = std::make_unique<Fraction>(left->evaluate());
+            auto node_right = std::make_unique<Fraction>(right->evaluate());
             bool isNegative = false;
 
 
             if (!isProductBounded(node_left->numerator, node_right->numerator)
-                || !isProductBounded(node_left->denominator, node_right->denominator)) {
-                delete node_left; node_left = nullptr;
-                delete node_right; node_right = nullptr;
+                || !isProductBounded(node_left->denominator, node_right->denominator))
                 throw std::overflow_error(overflowErrorMessage());
-            }
 
             if (node_left->isNegative ^ /*XOR*/ node_right->isNegative)
                 isNegative = true;
@@ -234,46 +203,33 @@ private:
             ull_t numerator = node_left->numerator * node_right->numerator;
             ull_t denominator = node_right->denominator * node_left->denominator;
 
-            delete node_left; node_left = nullptr;
-            delete node_right; node_right = nullptr;
-
-            return new Fraction(numerator, denominator, isNegative);
+            return Fraction(numerator, denominator, isNegative);
         }
 
-        ~Product() override { delete left; delete right; }
+        ~Product() override = default;
     };
 
     struct Quotient : public ASTNode {
-        ASTNode* left;
-        ASTNode* right;
+        std::unique_ptr<ASTNode> left;
+        std::unique_ptr<ASTNode> right;
 
-        explicit Quotient(ASTNode* l, ASTNode* r): left(l), right(r) {
-            if (dynamic_cast<Fraction*>(right)) {
-                auto den = dynamic_cast<Fraction*>(right);
-                if (den->numerator == 0) {
-                    throw std::domain_error("Division by zero detected during parsing");
-                }
-            }
-        }
+        explicit Quotient(std::unique_ptr<ASTNode>&& l, std::unique_ptr<ASTNode>&& r)
+            : left(std::move(l)), right(std::move(r)) {}
 
-        Fraction* evaluate() override {
-            Fraction* node_left = left->evaluate();
-            Fraction* node_right = right->evaluate();
-            delete left; left = nullptr;
-            delete right; right = nullptr;
+        Fraction evaluate() override {
+            auto node_left = std::make_unique<Fraction>(left->evaluate());
+            auto node_right = std::make_unique<Fraction>(right->evaluate());
 
-            if (node_right->numerator == 0) {
-                delete node_left; node_left = nullptr;
-                delete node_right; node_right = nullptr;
-                throw std::domain_error("Division by zero detected during evaluation");
-            }
+            if (node_right->numerator == 0)
+                throw std::domain_error("Division by zero detected");
 
             std::swap(node_right->numerator, node_right->denominator);
 
-            return Product(node_left, node_right).evaluate();
+
+            return Product(std::move(node_left), std::move(node_right)).evaluate();
         }
 
-        ~Quotient() override { delete left; delete right; }
+        ~Quotient() override = default;
     };
 
 
@@ -433,47 +389,46 @@ private:
      * E := T { (+ || -) T }
      */
 
-    [[nodiscard]] static ASTNode* parse(const std::string& expression) {
+    [[nodiscard]] static std::unique_ptr<ASTNode> parse(const std::string& expression) {
         Lexer lex(expression);
         return parseExpression(lex);
     };
 
-    static void operateOnLeft(ASTNode*& left, Lexer& lex) {
-        switch (*lex) {
+    static void operateOnLeft(std::unique_ptr<ASTNode>& left, Lexer& lex) {
+        char op = *lex;
+        ++lex;
+        auto right = parseTerm(lex);
+        switch (op) {
             case '+':
-                ++lex;
-                left = new Addition(left, parseTerm(lex));
+                left = std::make_unique<Addition>(std::move(left), std::move(right));
                 break;
 
             case '-':
-                ++lex;
-                left = new Subtraction(left, parseTerm(lex));
+                left = std::make_unique<Subtraction>(std::move(left), std::move(right));
                 break;
 
             case '*':
-                ++lex;
-                left = new Product(left, parseTerm(lex));
+                left = std::make_unique<Product>(std::move(left), std::move(right));
                 break;
 
             case '/':
-                ++lex;
-                left = new Quotient(left, parseTerm(lex));
+                left = std::make_unique<Quotient>(std::move(left), std::move(right));
                 break;
 
-            default: break;
+            default: throw std::logic_error("Unexpected operator in operateOnLeft method");
         }
     }
 
-    [[nodiscard]] static ASTNode* parseExpression(Lexer& lex) {
+    [[nodiscard]] static std::unique_ptr<ASTNode> parseExpression(Lexer& lex) {
         auto left = parseTerm(lex);
 
         while (*lex == '+' || *lex == '-') // slight redundancy here, but this is otherwise the best way to do it
-                operateOnLeft(left, lex);
+            operateOnLeft(left, lex);
 
         return left;
     }
 
-    [[nodiscard]] static ASTNode* parseTerm(Lexer& lex) {
+    [[nodiscard]] static std::unique_ptr<ASTNode> parseTerm(Lexer& lex) {
         auto left = parseOperand(lex);
 
         while (*lex == '*' || *lex == '/')
@@ -482,7 +437,7 @@ private:
         return left;
     };
 
-    [[nodiscard]] static ASTNode* parseOperand(Lexer& lex) {
+    [[nodiscard]] static std::unique_ptr<ASTNode> parseOperand(Lexer& lex) {
         bool isNegative = false;
 
         while (true) {
@@ -495,7 +450,7 @@ private:
             ++lex;
             auto node = parseExpression(lex);
             ++lex;
-            if (isNegative) return new Negation(node);
+            if (isNegative) return std::make_unique<Negation>(node);
             return node;
         }
 
@@ -509,7 +464,7 @@ private:
         }
 
 
-        return new Fraction(operand, 1, isNegative);
+        return std::make_unique<Fraction>(operand, 1, isNegative);
     };
 
 };
