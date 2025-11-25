@@ -18,6 +18,7 @@ void displayFeatures() {
     std::cout << "* No trailing operators with no operands allowed, such as in \"7+\" or \"(7+)6\" or \"4/4*4*\"" << "\n";
     std::cout << "* Parentheses adjacent to numbers or other parentheses are padded by * . Example:" << "\n";
     std::cout << "      \"2(1/2)4(5-7)(0+1)\" is evaluated as \"2*(1/2)*4*(5-7)*(0+1)\"" << "\n";
+    std::cout << "* Supports numbers with great orders of magnitude (up to around 10 ^ 300)" << "\n";
     std::cout << "---------------------------------------------------------------------------------------------------------" << "\n";
     std::cout << "\n";
 }

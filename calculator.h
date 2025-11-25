@@ -2,12 +2,11 @@
 #define CALCULATOR_H
 
 #include <cmath>
+#include <cstdint>
 #include <memory>
-#include <numeric>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <tuple>
 #include <utility>
 
 class Calculator {
@@ -15,8 +14,8 @@ public:
 
     double calculate(const std::string& expression) {
         auto ASTree = parse(expression);
-        Fraction totalFraction = ASTree->evaluate();
-        lastAnswer = totalFraction.calculate();
+        ScientificValue answer = ASTree->evaluate();
+        lastAnswer = answer.rawValue();
         lastExpression = expression;
         return lastAnswer;
     }
@@ -27,251 +26,135 @@ public:
 
 private:
 
-    using ull_t = unsigned long long int;
-    static inline constexpr unsigned short int MAX_DIGITS = 15; // for computing double, needs to be <= 15
-    // decided to compromise for the biggest number with MAX_DIGITS number of digits, since it's faster to compare with
-    static inline constexpr ull_t MAX_NUM = []() constexpr {
-        ull_t num = 0;
-        for (int i = 0; i < MAX_DIGITS; ++i) {
-            num *= 10;
-            num += 9;
-        }
-        return num;
-    }();
+    static inline constexpr std::uint8_t MAX_DIGITS = 12;
+    // for precision in double, MAX_DIGITS needs to be <= 15 . It is currently set to 12 to create a large safety
+    // net against floating-point errors of double.
+    static inline constexpr std::uint16_t MAX_MAGNITUDE = 300; // double can store an exponent up to (plus-or-minus) 308
 
-    static std::string overflowErrorMessage() { // Must adjust if MAX_NUM is changed
-        return "Max number of digits (currently set to " + std::to_string(MAX_DIGITS) + ") exceeded";
+
+    static int getScientificMagnitude(const double& value) {
+        if (value == 0.0) return 0;
+        return std::floor(std::log10(std::abs(value)));
     }
 
-    static bool isBounded(const ull_t& x) { return x <= MAX_NUM; }
+    static std::string overflowErrorMessage() {
+        return "Value limit exceeded (currently set to 10 ^ " + std::to_string(MAX_MAGNITUDE) + ")";
+    }
 
-    static bool isProductBounded(ull_t copy1, ull_t copy2) {
-        if (copy1 == 0 || copy2 == 0) return true;
-        unsigned int digits1 = 0, digits2 = 0;
-        while (copy1 != 0) { copy1 /= 10; ++digits1; }
-        while (copy2 != 0) { copy2 /= 10; ++digits2; }
-        return digits1 + digits2 <= MAX_DIGITS;
-        // often, digits of product = digits1 + digits2 - 1 , but this is fine for the sake of simplicity.
+    static bool isBounded(const double& value) {
+        return std::abs( getScientificMagnitude(value) ) <= MAX_MAGNITUDE;
+    }
+
+    static bool isProductBounded(const int& magnitude1, const int& magnitude2) {
+        return std::abs(magnitude1 + magnitude2 ) <= MAX_MAGNITUDE;
+        // magnitude of product isn't always equal to sum of magnitudes, but this works fine when MAX_MAGNITUDE is so large
     }
 
 
-    struct Fraction;
+    struct ScientificValue;
     struct ASTNode {
-        virtual Fraction evaluate() = 0;
+        virtual ScientificValue evaluate() = 0;
         virtual ~ASTNode() = default;
     };
 
-    struct Fraction : public ASTNode {
-        ull_t numerator;
-        ull_t denominator;
-        bool isNegative;
+    struct ScientificValue : ASTNode {
+        double value; int magnitude;
 
-        explicit Fraction(const ull_t& n, const ull_t& d, const bool& neg = false):
-            numerator(n), denominator(d), isNegative(neg) {}
+        ScientificValue(const double& val, const int& m): value(val), magnitude(m) {}
 
-        Fraction evaluate() override { return *this; }
+        ScientificValue evaluate() override { return *this; }
 
-        [[nodiscard]] double calculate() const {
-            double result = static_cast<double>(numerator) / static_cast<double>(denominator);
-            if (isNegative) result = -result;
-            return result;
-        }
-
-        void reduce() {
-            if (numerator == 0) {
-                denominator = 1;
-                isNegative = false;
-                return;
+        [[nodiscard]] double rawValue() const {
+            if (this->magnitude == 0) {
+                return this->value;
             }
-            ull_t gcd = std::gcd(numerator, denominator); // gcd = greatest common divisor
-            numerator /= gcd;
-            denominator /= gcd;
-        }
-
-        [[nodiscard]] auto findCommons(const Fraction& other) const -> std::tuple<ull_t, ull_t, ull_t> {
-            const ull_t& l_num = this->numerator;
-            const ull_t& l_den = this->denominator;
-            const ull_t& r_num = other.numerator;
-            const ull_t& r_den = other.denominator;
-
-
-            ull_t gcd = std::gcd(l_den, r_den);
-            ull_t k = l_den / gcd;
-            if ( !isProductBounded(k, r_den) )
-                throw std::overflow_error(overflowErrorMessage());
-
-
-            ull_t lcm = k * r_den; // lcm = least common multiple
-            if ( !isProductBounded(l_num, lcm/l_den) )
-                throw std::overflow_error(overflowErrorMessage());
-
-            if ( !isProductBounded(r_num, lcm/r_den) )
-                throw std::overflow_error(overflowErrorMessage());
-
-
-            ull_t l_num_scaled = l_num * lcm / l_den;
-            ull_t r_num_scaled = r_num * lcm / r_den;
-
-            return {lcm, l_num_scaled, r_num_scaled};
+            return this->value * std::pow(10.0, this->magnitude);
         }
     };
+
+    static ScientificValue makeScientific(double value) {
+        if (value == 0.0) return {0.0, 0};
+        int magnitude = getScientificMagnitude(value);
+        int rounded = (MAX_DIGITS - 1) - magnitude;
+        double exponent = std::pow(10, rounded);
+        value = std::round(value * exponent) / exponent;
+        value = value / std::pow(10, magnitude);
+        return {value, magnitude};
+    }
 
     struct Negation : public ASTNode {
         std::unique_ptr<ASTNode> operand;
 
         explicit Negation(std::unique_ptr<ASTNode>&& o): operand(std::move(o)) {}
 
-        Fraction evaluate() override {
-            Fraction node = operand->evaluate();
-            node.isNegative = !node.isNegative;
-            return node;
+        ScientificValue evaluate() override {
+            auto val = operand->evaluate();
+            val.value = -val.value;
+            return val;
         }
 
         ~Negation() override = default;
     };
 
-    struct Addition : public ASTNode {
+    struct AddOrSubtract : public ASTNode {
         std::unique_ptr<ASTNode> left;
         std::unique_ptr<ASTNode> right;
+        bool isSub;
 
-        explicit Addition(std::unique_ptr<ASTNode>&& l, std::unique_ptr<ASTNode>&& r)
-            : left(std::move(l)), right(std::move(r)) {}
+        explicit AddOrSubtract(std::unique_ptr<ASTNode>&& l, std::unique_ptr<ASTNode>&& r, const bool& b = false)
+            : left(std::move(l)), right(std::move(r)), isSub(b) {}
 
-        Fraction evaluate() override {
-            auto node_left = std::make_unique<Fraction>(left->evaluate());
-            auto node_right = std::make_unique<Fraction>(right->evaluate());
+        ScientificValue evaluate() override {
+            const ScientificValue left_val = left->evaluate();
+            const ScientificValue right_val = right->evaluate();
 
+            const double raw_left = left_val.rawValue();
+            const double raw_right = right_val.rawValue();
+            const double raw_sum = isSub ? raw_left - raw_right : raw_left + raw_right ;
 
-            if (!node_left->isNegative && node_right->isNegative) {
-                node_right->isNegative = false;
-                return Subtraction(std::move(node_left), std::move(node_right)).evaluate();
-            }
-
-            if (node_left->isNegative && !node_right->isNegative) {
-                node_left->isNegative = false;
-                return Subtraction(std::move(node_right), std::move(node_left)).evaluate();
-            }
-
-            bool isNegative = node_left->isNegative && node_right->isNegative ? true : false ;
-
-
-            auto commons = node_left->findCommons(*node_right);
-            auto& [lcm, l_num_scaled, r_num_scaled] = commons;
-            auto numerator = l_num_scaled + r_num_scaled;
-            // safe if MAX_DIGITS is few digits away from ull_t. Then we just check if numerator is bounded
-
-
-            Fraction result(numerator, lcm, isNegative);
-            result.reduce();
-            if (!isBounded(result.numerator))
-                throw std::overflow_error(overflowErrorMessage());
-            return result;
-        }
-
-        ~Addition() override = default;
-    };
-
-    struct Subtraction : public ASTNode {
-        std::unique_ptr<ASTNode> left;
-        std::unique_ptr<ASTNode> right;
-
-        explicit Subtraction(std::unique_ptr<ASTNode>&& l, std::unique_ptr<ASTNode>&& r)
-            : left(std::move(l)), right(std::move(r)) {}
-
-        Fraction evaluate() override {
-            auto node_left = std::make_unique<Fraction>(left->evaluate());
-            auto node_right = std::make_unique<Fraction>(right->evaluate());
-
-
-            if (node_left->isNegative && !node_right->isNegative) {
-                node_right->isNegative = true;
-                return Addition(std::move(node_left), std::move(node_right)).evaluate();
-            }
-
-            if (!node_left->isNegative && node_right->isNegative) {
-                node_right->isNegative = false;
-                return Addition(std::move(node_left), std::move(node_right)).evaluate();
-            }
-
-            bool isNegative = node_left->isNegative && node_right->isNegative ? true : false ;
-
-
-            auto commons = node_left->findCommons(*node_right);
-            auto& [lcm, l_num_scaled, r_num_scaled] = commons;
-
-            ull_t numerator;
-            if (l_num_scaled < r_num_scaled) {
-                numerator = r_num_scaled - l_num_scaled;
-                isNegative = !isNegative;
-            }
-            else numerator = l_num_scaled - r_num_scaled;
-            // Subtraction here will always be bounded by MAX_DIGITS
-
-
-            Fraction result(numerator, lcm, isNegative);
-            result.reduce();
-            return result;
-        }
-
-        ~Subtraction() override = default;
-    };
-
-    struct Product : public ASTNode {
-        std::unique_ptr<ASTNode> left;
-        std::unique_ptr<ASTNode> right;
-
-        explicit Product(std::unique_ptr<ASTNode>&& l, std::unique_ptr<ASTNode>&& r)
-            : left(std::move(l)), right(std::move(r)) {}
-
-        Fraction evaluate() override {
-            auto node_left = std::make_unique<Fraction>(left->evaluate());
-            auto node_right = std::make_unique<Fraction>(right->evaluate());
-            bool isNegative = node_left->isNegative ^ node_right->isNegative ? true : false ;
-
-
-            auto gcd1 = std::gcd(node_left->numerator, node_right->denominator);
-            auto gcd2 = std::gcd(node_left->denominator, node_right->numerator);
-
-            node_left->numerator /= gcd1;
-            node_left->denominator /= gcd2;
-            node_right->numerator /= gcd2;
-            node_right->denominator /= gcd1;
-
-            if (!isProductBounded(node_left->numerator, node_right->numerator)
-                || !isProductBounded(node_left->denominator, node_right->denominator))
+            if (!isBounded(raw_sum))
                 throw std::overflow_error(overflowErrorMessage());
 
-            ull_t numerator = node_left->numerator * node_right->numerator;
-            ull_t denominator = node_left->denominator * node_right->denominator;
-
-
-            return Fraction(numerator, denominator, isNegative);
+            return makeScientific(raw_sum);
         }
 
-        ~Product() override = default;
+        ~AddOrSubtract() override = default;
     };
 
-    struct Quotient : public ASTNode {
+    struct MultiplyOrDivide : public ASTNode {
         std::unique_ptr<ASTNode> left;
         std::unique_ptr<ASTNode> right;
+        bool isDiv;
 
-        explicit Quotient(std::unique_ptr<ASTNode>&& l, std::unique_ptr<ASTNode>&& r)
-            : left(std::move(l)), right(std::move(r)) {}
+        explicit MultiplyOrDivide(std::unique_ptr<ASTNode>&& l, std::unique_ptr<ASTNode>&& r, const bool& b = false)
+            : left(std::move(l)), right(std::move(r)), isDiv(b) {}
 
-        Fraction evaluate() override {
-            auto node_left = std::make_unique<Fraction>(left->evaluate());
-            auto node_right = std::make_unique<Fraction>(right->evaluate());
-
-            if (node_right->numerator == 0)
-                throw std::domain_error("Division by zero detected");
-
-            std::swap(node_right->numerator, node_right->denominator);
+        ScientificValue evaluate() override {
+            const ScientificValue left_val = left->evaluate();
+            const ScientificValue right_val = right->evaluate();
 
 
-            return Product(std::move(node_left), std::move(node_right)).evaluate();
+            if (isDiv) {
+                if (right_val.value == 0.0)
+                    throw std::domain_error("Division by zero detected");
+
+                int right_mag_inverse = -right_val.magnitude;
+                if (!isProductBounded(left_val.magnitude, right_mag_inverse))
+                    throw std::overflow_error(overflowErrorMessage());
+
+                const double quotient = left_val.rawValue() / right_val.rawValue();
+                return makeScientific(quotient);
+            }
+
+
+            if (!isProductBounded(left_val.magnitude, right_val.magnitude))
+                throw std::overflow_error(overflowErrorMessage());
+
+            const double product = left_val.rawValue() * right_val.rawValue();
+            return makeScientific(product);
         }
 
-        ~Quotient() override = default;
+        ~MultiplyOrDivide() override = default;
     };
 
 
@@ -439,22 +322,26 @@ private:
     static void operateOnLeft(std::unique_ptr<ASTNode>& left, Lexer& lex) {
         char op = *lex;
         ++lex;
-        auto right = parseTerm(lex);
+        std::unique_ptr<ASTNode> right;
         switch (op) {
             case '+':
-                left = std::make_unique<Addition>(std::move(left), std::move(right));
+                right = parseTerm(lex);
+                left = std::make_unique<AddOrSubtract>(std::move(left), std::move(right));
                 break;
 
             case '-':
-                left = std::make_unique<Subtraction>(std::move(left), std::move(right));
+                right = parseTerm(lex);
+                left = std::make_unique<AddOrSubtract>(std::move(left), std::move(right), true);
                 break;
 
             case '*':
-                left = std::make_unique<Product>(std::move(left), std::move(right));
+                right = parseOperand(lex);
+                left = std::make_unique<MultiplyOrDivide>(std::move(left), std::move(right));
                 break;
 
             case '/':
-                left = std::make_unique<Quotient>(std::move(left), std::move(right));
+                right = parseOperand(lex);
+                left = std::make_unique<MultiplyOrDivide>(std::move(left), std::move(right), true);
                 break;
 
             default: throw std::logic_error("Unexpected operator in operateOnLeft method");
@@ -496,17 +383,17 @@ private:
             return node;
         }
 
-        ull_t operand = 0;
+        double operand = 0;
         while ( isDigit(*lex) ) {
             operand *= 10;
-            operand += static_cast<ull_t>(*lex) - static_cast<ull_t>('0');
+            operand += static_cast<double>(*lex) - static_cast<double>('0');
             if (!isBounded(operand))
                 throw std::overflow_error(overflowErrorMessage());
             ++lex;
         }
 
-
-        return std::make_unique<Fraction>(operand, 1, isNegative);
+        if (isNegative) operand = -operand;
+        return std::make_unique<ScientificValue>( makeScientific(operand) );
     };
 
 };
