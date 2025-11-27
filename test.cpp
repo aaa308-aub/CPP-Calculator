@@ -3,13 +3,12 @@
 #include <iostream>
 #include <iomanip>
 #include <exception>
+#include <string>
 #include <vector>
 
 int main() {
     std::vector<std::string> inputs;
-
     // -------------------- VALID INPUTS START HERE --------------------------
-    inputs.emplace_back("1/2*2");
     inputs.emplace_back("1+2");                                  //  1
     inputs.emplace_back("4*21/(8+3) - (7)*450");                 //  2
     inputs.emplace_back("((15))");                               //  3
@@ -68,7 +67,7 @@ int main() {
         ++testCaseNumber;
         std::cout << testCaseNumber << ".)  ";
         try {
-            std::cout << std::setprecision(15) << calc.calculate(input) << "\n";
+            std::cout << calc.calculate(input) << "\n";
         } catch (const std::exception& e) { std::cout << e.what() << "\n"; }
     }
 }

@@ -20,7 +20,7 @@ public:
         return lastAnswer;
     }
 
-    [[nodiscard]] auto getMaxDigits() const { return MAX_DIGITS; }
+    [[nodiscard]] auto getMaxDigits() { return MAX_DIGITS; }
     [[nodiscard]] auto getLastExpression() const { return lastExpression; }
     [[nodiscard]] auto getLastAnswer() const { return lastAnswer; }
 
@@ -46,7 +46,7 @@ private:
     }
 
     static bool isProductBounded(const int& magnitude1, const int& magnitude2) {
-        return std::abs(magnitude1 + magnitude2 ) <= MAX_MAGNITUDE;
+        return std::abs(magnitude1 + magnitude2) <= MAX_MAGNITUDE;
         // magnitude of product isn't always equal to sum of magnitudes, but this works fine when MAX_MAGNITUDE is so large
     }
 
@@ -65,9 +65,6 @@ private:
         ScientificValue evaluate() override { return *this; }
 
         [[nodiscard]] double rawValue() const {
-            if (this->magnitude == 0) {
-                return this->value;
-            }
             return this->value * std::pow(10.0, this->magnitude);
         }
     };
@@ -75,7 +72,7 @@ private:
     static ScientificValue makeScientific(double value) {
         if (value == 0.0) return {0.0, 0};
         int magnitude = getScientificMagnitude(value);
-        int rounded = (MAX_DIGITS - 1) - magnitude;
+        int rounded = MAX_DIGITS - 1 - magnitude;
         double exponent = std::pow(10, rounded);
         value = std::round(value * exponent) / exponent;
         value = value / std::pow(10, magnitude);
@@ -88,7 +85,7 @@ private:
         explicit Negation(std::unique_ptr<ASTNode>&& o): operand(std::move(o)) {}
 
         ScientificValue evaluate() override {
-            auto val = operand->evaluate();
+            ScientificValue val = operand->evaluate();
             val.value = -val.value;
             return val;
         }
@@ -175,7 +172,7 @@ private:
     class Lexer {
     private:
 
-        char SENTINEL_CHAR = ' '; // unused sentinel value to silence warnings about uninitialized members
+        static inline constexpr char SENTINEL_CHAR = ' '; // unused sentinel value to silence warnings about uninitialized members
         const std::string& expression;
         unsigned int idx;
         unsigned int numOpenPars;
