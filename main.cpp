@@ -45,5 +45,4 @@ int main() {
             std::cout << "ERROR / INVALID INPUT : " << e.what() << "\n\n";
         }
     }
-
 }

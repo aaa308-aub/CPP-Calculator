@@ -15,19 +15,21 @@ public:
     double calculate(const std::string& expression) {
         auto ASTree = parse(expression);
         ScientificValue answer = ASTree->evaluate();
+        answer = makeScientific(answer.rawValue(),MAX_DIGITS-1);
+        // must round to MAX_DIGITS - 1 to precisely represent repeating doubles like 0.9999999... = 1
         lastAnswer = answer.rawValue();
         lastExpression = expression;
         return lastAnswer;
     }
 
-    [[nodiscard]] auto getMaxDigits() { return MAX_DIGITS; }
+    [[nodiscard]] auto getMaxDigits() const { return MAX_DIGITS; }
     [[nodiscard]] auto getLastExpression() const { return lastExpression; }
     [[nodiscard]] auto getLastAnswer() const { return lastAnswer; }
 
 private:
 
-    static inline constexpr std::uint8_t MAX_DIGITS = 12;
-    // for precision in double, MAX_DIGITS needs to be <= 15 . It is currently set to 12 to create a large safety
+    static inline constexpr std::uint8_t MAX_DIGITS = 13;
+    // for precision in double, MAX_DIGITS needs to be <= 15 . It is currently set to 13 to create a large safety
     // net against floating-point errors of double.
     static inline constexpr std::uint16_t MAX_MAGNITUDE = 300; // double can store an exponent up to (plus-or-minus) 308
 
@@ -69,10 +71,10 @@ private:
         }
     };
 
-    static ScientificValue makeScientific(double value) {
+    static ScientificValue makeScientific(double value, const std::uint8_t& lastDigit = MAX_DIGITS) {
         if (value == 0.0) return {0.0, 0};
         int magnitude = getScientificMagnitude(value);
-        int rounded = MAX_DIGITS - 1 - magnitude;
+        int rounded = lastDigit - 1 - magnitude;
         double exponent = std::pow(10, rounded);
         value = std::round(value * exponent) / exponent;
         value = value / std::pow(10, magnitude);
