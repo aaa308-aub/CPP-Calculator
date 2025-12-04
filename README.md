@@ -10,3 +10,4 @@ To learn how to work on a project in C++ especially while handling dynamic memor
 * Follows the proper rules of associativity and precedence
 * Supports operator chains for signness as long as the chain is valid
 * Raises the appropriate errors when user input expression is invalid
+* Supports great orders of magnitude (currently set to 10^300) and answers with very high precision (currently set to 12 digits of precision)
