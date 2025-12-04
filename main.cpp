@@ -1,16 +1,16 @@
-#include "calculator.h"
+#include "Source/calculator.h"
 
-#include <iostream>
-#include <iomanip>
 #include <exception>
+#include <iomanip>
+#include <iostream>
 
 void displayFeatures() {
-    std::cout << "------------------------------------- Calculator rules and features -------------------------------------" << "\n";
-    std::cout << "* Supports basics operations: addition (+), subtraction (-), multiplication (*), and division (/), while" << "\n";
+    std::cout << "---------------------------------- Calculator rules and features ---------------------------------" << "\n";
+    std::cout << "* Supports basics operations: addition (+), subtraction (-), multiplication (*), and division (/)," << "\n";
     std::cout << "   following their rules of associativity and precedence. Example: \"4-3*5\" is evaluated as 4-(3*5)" << "\n";
     std::cout << "* Supports nesting with parentheses, and negation with unary minus, such as in \"-5\"" << "\n";
     std::cout << "* Supports adjacent operators as long as the leading operators are not * or / . The left-most" << "\n";
-    std::cout << "    operator can be anything. Examples:" << "\n";
+    std::cout << "   operator can be anything. Examples:" << "\n";
     std::cout << "      \"+--+-5\" : evaluates to -5" << "\n";
     std::cout << "      \"-8*+--4\" : evaluates to -8*4" << "\n";
     std::cout << "      \"+++9/+(--7)\" : evaluates to 9/7" << "\n";
@@ -18,14 +18,15 @@ void displayFeatures() {
     std::cout << "* No trailing operators without right operands allowed, such as in \"7+\" or \"(7+)6\" or \"4/4*4*\"" << "\n";
     std::cout << "* Parentheses adjacent to numbers or other parentheses are padded by * . Example:" << "\n";
     std::cout << "      \"2(1/2)4(5-7)(0+1)\" is evaluated as \"2*(1/2)*4*(5-7)*(0+1)\"" << "\n";
-    std::cout << "* Supports numbers with great orders of magnitude (up to around 10 ^ 300)" << "\n";
-    std::cout << "---------------------------------------------------------------------------------------------------------" << "\n";
+    std::cout << "* Returns answers with " << std::to_string(calc::MAX_DIGITS) << " digits of precision." << "\n";
+    std::cout << "* Supports values with great orders of magnitude (up to around 10 ^ " << std::to_string(calc::MAX_MAGNITUDE) << ")" << "\n";
+    std::cout << "--------------------------------------------------------------------------------------------------" << "\n";
     std::cout << "\n";
 }
 
 int main() {
     Calculator calc;
-    std::cout << std::setprecision(calc.getMaxDigits());
+    std::cout << std::setprecision(calc::MAX_DIGITS);
 
     displayFeatures();
 
@@ -36,7 +37,7 @@ int main() {
         std::cout << "\n";
 
         if (input == "d") { displayFeatures(); continue; }
-        else if (input == "e") break;
+        if (input == "e") break;
 
         try {
             calc.calculate(input);
