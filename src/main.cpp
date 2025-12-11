@@ -1,8 +1,8 @@
 #include "calculator.h"
 
-#include <iostream>
-#include <iomanip>
 #include <exception>
+#include <iomanip>
+#include <iostream>
 
 void displayFeatures() {
     std::cout << "------------------------------------- Calculator rules and features -------------------------------------" << "\n";
@@ -18,14 +18,15 @@ void displayFeatures() {
     std::cout << "* No trailing operators without right operands allowed, such as in \"7+\" or \"(7+)6\" or \"4/4*4*\"" << "\n";
     std::cout << "* Parentheses adjacent to numbers or other parentheses are padded by * . Example:" << "\n";
     std::cout << "      \"2(1/2)4(5-7)(0+1)\" is evaluated as \"2*(1/2)*4*(5-7)*(0+1)\"" << "\n";
-    std::cout << "* Supports numbers with great orders of magnitude (up to around 10 ^ 300)" << "\n";
+    std::cout << "* Supports values with great orders of magnitude (up to around 10^" << std::to_string(calc::MAX_MAGNITUDE) << ")" << "\n";
+    std::cout << "* Returns answers with high precision (currently set to " << std::to_string(calc::MAX_DIGITS) << " digits of precision)" << "\n";
     std::cout << "---------------------------------------------------------------------------------------------------------" << "\n";
     std::cout << "\n";
 }
 
 int main() {
     Calculator calc;
-    std::cout << std::setprecision(calc.getMaxDigits());
+    std::cout << std::setprecision(calc::MAX_DIGITS);
 
     displayFeatures();
 
