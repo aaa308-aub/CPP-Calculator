@@ -1,4 +1,3 @@
-cmake-build-debug
+build-default
+build-release
 .idea
-main.exe
-test.exe
